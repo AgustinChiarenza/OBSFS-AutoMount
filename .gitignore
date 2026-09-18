@@ -1,0 +1,15 @@
+# Salida de compilacion
+dist/
+*.pdb
+
+# Temporales
+*.tmp
+*.log
+obsfs-shot*.png
+
+# Windows / editores
+Thumbs.db
+desktop.ini
+.vs/
+.vscode/
+*.user

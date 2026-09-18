@@ -1,0 +1,6 @@
+# Proyecto exclusivamente Windows: finales de linea CRLF en todo el texto.
+* text=auto eol=crlf
+
+*.ico binary
+*.exe binary
+*.png binary
