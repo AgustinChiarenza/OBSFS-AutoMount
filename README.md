@@ -4,11 +4,11 @@ Monta un bucket de **Huawei Cloud OBS** como una unidad de disco de Windows, des
 ventana. Es la automatización del instructivo manual de *rclone + WinFsp*: en vez de PowerShell,
 asistentes interactivos y `schtasks`, se completan cuatro campos y se aprieta un botón.
 
-[![build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
+[![build](https://github.com/AgustinChiarenza/OBSFS-AutoMount/actions/workflows/build.yml/badge.svg)](https://github.com/AgustinChiarenza/OBSFS-AutoMount/actions/workflows/build.yml)
 
 ## Descargar
 
-**[⬇ OBSFS-AutoMount.exe](../../releases/latest)** — un único archivo de ~170 KB.
+**[⬇ OBSFS-AutoMount.exe](https://github.com/AgustinChiarenza/OBSFS-AutoMount/releases/latest)** — un único archivo de ~170 KB.
 
 Se copia a cualquier Windows 10/11 y se ejecuta con doble clic. No hay instalador, no hay
 carpeta de dependencias, no necesita permisos de administrador para funcionar. La primera vez
