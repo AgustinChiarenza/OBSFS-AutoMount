@@ -102,22 +102,33 @@ namespace ObsfsAutoMount
         }
 
         /// <summary>Prefijo sin barras sobrantes y siempre con separador de URL.</summary>
-        public string NormalizedPrefix()
+        public static string NormalizePrefix(string prefix)
         {
             const char Bs = (char)92;   // barra invertida
-            string p = (Prefix ?? "").Trim().Replace(Bs, '/');
+            string p = (prefix ?? "").Trim().Replace(Bs, '/');
             while (p.StartsWith("/")) p = p.Substring(1);
             while (p.EndsWith("/")) p = p.Substring(0, p.Length - 1);
             return p;
         }
 
-        /// <summary>Ruta remota a montar: obs:bucket, o obs:bucket/subcarpeta si hay prefijo.</summary>
-        public string RemotePath()
+        public string NormalizedPrefix()
         {
-            string p = NormalizedPrefix();
+            return NormalizePrefix(Prefix);
+        }
+
+        /// <summary>Ruta remota de un prefijo cualquiera dentro del bucket configurado.</summary>
+        public string RemotePathFor(string prefix)
+        {
+            string p = NormalizePrefix(prefix);
             string b = (Bucket ?? "").Trim();
             if (p.Length == 0) return RemoteName + ":" + b;
             return RemoteName + ":" + b + "/" + p;
+        }
+
+        /// <summary>Ruta remota a montar: obs:bucket, o obs:bucket/subcarpeta si hay prefijo.</summary>
+        public string RemotePath()
+        {
+            return RemotePathFor(Prefix);
         }
 
         public string MountPoint()

@@ -240,7 +240,7 @@ namespace ObsfsAutoMount
             if (bucket.Length > 0)
             {
                 ProcResult r2 = RunRclone(
-                    "lsd " + cfg.RemotePath() + " --max-depth 1" + netArgs, cfg, 60000);
+                    "lsd " + Q(cfg.RemotePath()) + " --max-depth 1" + netArgs, cfg, 60000);
                 if (r2.Ok)
                 {
                     buckets.Add(bucket);
@@ -252,6 +252,48 @@ namespace ObsfsAutoMount
 
             error = r.FriendlyError();
             return false;
+        }
+
+        /// <summary>
+        /// Lista las carpetas que cuelgan de un nivel del bucket. Devuelve rutas relativas al
+        /// bucket ("clientes", "clientes/2026"), listas para usar como prefijo de montaje.
+        /// Un solo nivel por llamada: recorrer el bucket entero seria una peticion por carpeta.
+        /// </summary>
+        public static bool ListFolders(AppConfig cfg, string under, out List<string> folders,
+                                       out string error)
+        {
+            folders = new List<string>();
+            error = null;
+
+            if ((cfg.Bucket ?? "").Trim().Length == 0)
+            {
+                error = "Falta elegir el bucket.";
+                return false;
+            }
+
+            string p = AppConfig.NormalizePrefix(under);
+            ProcResult r = RunRclone(
+                "lsd " + Q(cfg.RemotePathFor(p)) + " --max-depth 1" +
+                " --contimeout 15s --timeout 30s --retries 1 --low-level-retries 2", cfg, 60000);
+
+            if (!r.Ok)
+            {
+                error = r.FriendlyError();
+                return false;
+            }
+
+            string[] lines = r.StdOut.Replace("\r", "").Split('\n');
+            foreach (string line in lines)
+            {
+                string t = line.Trim();
+                if (t.Length == 0) continue;
+                string[] parts = t.Split(new char[] { ' ' }, 5, StringSplitOptions.RemoveEmptyEntries);
+                string name = (parts.Length >= 5 ? parts[4] : parts[parts.Length - 1]).Trim();
+                if (name.Length == 0) continue;
+                folders.Add(p.Length > 0 ? p + "/" + name : name);
+            }
+            folders.Sort(StringComparer.OrdinalIgnoreCase);
+            return true;
         }
 
         // ------------------------------------------------------------ montaje
@@ -269,7 +311,7 @@ namespace ObsfsAutoMount
         {
             StringBuilder a = new StringBuilder();
             a.Append("mount ");
-            a.Append(cfg.RemotePath());
+            a.Append(Q(cfg.RemotePath()));
             a.Append(" ").Append(cfg.MountPoint());
 
             string mode = string.IsNullOrEmpty(cfg.CacheMode) ? "writes" : cfg.CacheMode;

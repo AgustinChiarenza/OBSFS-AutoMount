@@ -23,8 +23,8 @@ Windows muestra *"Windows protegió su PC"* porque el ejecutable no está firmad
 2. **Paso 1 — Requisitos**: clic en *Instalar faltantes*. Descarga rclone y WinFsp solo.
    WinFsp es un driver, así que Windows pide confirmación de administrador **una vez**.
 3. **Paso 2 — Credenciales**: endpoint, AK y SK. Clic en *Probar conexión*: valida las claves y
-   llena la lista de buckets disponibles. Elegir el bucket. Opcionalmente, escribir una
-   **Carpeta** para montar solo esa subcarpeta en vez del bucket entero.
+   llena la lista de buckets disponibles. Elegir el bucket y, si hace falta, una **Carpeta** para
+   montar solo esa subcarpeta en vez del bucket entero.
 4. **Paso 3 — Unidad**: letra y etiqueta. Los valores de caché ya vienen con los recomendados.
 5. Tildar **Montar al iniciar el equipo** si se quiere que aparezca sola en cada sesión.
 6. **Montar ahora**. La unidad se abre en el Explorador.
@@ -42,8 +42,12 @@ pero es editable: se puede escribir cualquier otro. Se acepta con o sin `https:/
 
 ### Carpeta (prefijo)
 
-Si se deja vacía se monta el bucket completo. Si se escribe `clientes/2026`, la unidad muestra el
+Si se deja vacía se monta el bucket completo. Si se elige `clientes/2026`, la unidad muestra el
 contenido de esa subcarpeta como si fuera la raíz.
+
+Igual que con el bucket, la lista se llena sola: *Probar conexión* trae las carpetas de la raíz, y
+cada vez que se elige una se listan las que tiene adentro, un nivel por vez. También se puede
+escribir la ruta a mano.
 
 Sirve sobre todo cuando la clave de acceso está acotada por *policy* a un prefijo: en esos casos
 listar la raíz del bucket devuelve *AccessDenied* y el montaje falla, aunque la clave sí tenga

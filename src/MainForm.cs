@@ -33,21 +33,26 @@ namespace ObsfsAutoMount
         private const string DepsHint =
             "rclone es el cliente de OBS; WinFsp lo muestra como unidad. Se instalan una sola vez.";
 
+        private const string FolderHint =
+            "Opcional: vacía monta todo el bucket. Al elegir una carpeta se listan sus subcarpetas.";
+
         private AppConfig cfg;
         private readonly bool startedForAutoMount;
         private bool busy;
         private bool reallyExit;
         private bool suppressAutoStartEvent;
+        private bool suppressFolderEvent;
+        private bool loadingFolders;
 
         // --- controles
         private Label lblRcloneDot, lblRclone, lblWinFspDot, lblWinFsp, lblProgress;
         private Button btnDeps;
         private ProgressBar pb;
 
-        private ComboBox cmbEndpoint, cmbBucket, cmbLetter, cmbCache;
-        private TextBox txtAk, txtSk, txtPrefix, txtLabel, txtCacheSize, txtDirCache;
+        private ComboBox cmbEndpoint, cmbBucket, cmbPrefix, cmbLetter, cmbCache;
+        private TextBox txtAk, txtSk, txtLabel, txtCacheSize, txtDirCache;
         private Button btnEye, btnTest, btnAdvanced;
-        private Label lblTest;
+        private Label lblTest, lblFolders;
 
         private CheckBox chkNetwork, chkReadOnly, chkAutoStart;
         private Button btnMount, btnUnmount, btnOpen, btnLog;
@@ -78,7 +83,7 @@ namespace ObsfsAutoMount
         private void BuildUi()
         {
             Text = "OBSFS AutoMount";
-            ClientSize = new Size(620, 756);
+            ClientSize = new Size(620, 782);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -126,7 +131,7 @@ namespace ObsfsAutoMount
             Controls.Add(g1);
 
             // ---------- 2. credenciales
-            GroupBox g2 = Theme.Group("  2 · Credenciales de Huawei Cloud OBS  ", 14, 198, 592, 250);
+            GroupBox g2 = Theme.Group("  2 · Credenciales de Huawei Cloud OBS  ", 14, 198, 592, 276);
             Label l1 = Theme.Lbl("Endpoint", 14, 28, 110);
             cmbEndpoint = Theme.Cmb(128, 25, 448, true);
             cmbEndpoint.Items.AddRange(Endpoints);
@@ -151,15 +156,17 @@ namespace ObsfsAutoMount
             lblTest.Height = 30;
             Label l4 = Theme.Lbl("Bucket", 14, 188, 110);
             cmbBucket = Theme.Cmb(128, 185, 448, true);
+            cmbBucket.SelectedIndexChanged += CmbBucket_SelectedIndexChanged;
             Label l5 = Theme.Lbl("Carpeta", 14, 218, 110);
-            txtPrefix = Theme.Txt(128, 215, 200);
-            Label l6 = Theme.Hint("Opcional: monta solo esa subcarpeta.", 336, 218, 240);
+            cmbPrefix = Theme.Cmb(128, 215, 448, true);
+            cmbPrefix.SelectedIndexChanged += CmbPrefix_SelectedIndexChanged;
+            lblFolders = Theme.Hint(FolderHint, 14, 244, 562);
             AddTo(g2, l1, cmbEndpoint, l2, txtAk, l3, txtSk, btnEye, btnTest, btnAdvanced,
-                      lblTest, l4, cmbBucket, l5, txtPrefix, l6);
+                      lblTest, l4, cmbBucket, l5, cmbPrefix, lblFolders);
             Controls.Add(g2);
 
             // ---------- 3. unidad
-            GroupBox g3 = Theme.Group("  3 · Unidad en el Explorador  ", 14, 456, 592, 148);
+            GroupBox g3 = Theme.Group("  3 · Unidad en el Explorador  ", 14, 482, 592, 148);
             Label m1 = Theme.Lbl("Letra", 14, 28, 60);
             cmbLetter = Theme.Cmb(128, 25, 64, false);
             Label m2 = Theme.Lbl("Etiqueta", 212, 28, 60);
@@ -179,23 +186,23 @@ namespace ObsfsAutoMount
             Controls.Add(g3);
 
             // ---------- inicio automatico
-            chkAutoStart = Theme.Chk("Montar al iniciar el equipo", 18, 614, 300);
+            chkAutoStart = Theme.Chk("Montar al iniciar el equipo", 18, 640, 300);
             chkAutoStart.Font = Theme.Bold;
             chkAutoStart.CheckedChanged += ChkAutoStart_Changed;
             Label a1 = Theme.Hint(
                 "Se monta sola al iniciar sesión en Windows, sin ventanas ni permisos de administrador.",
-                36, 634, 570);
+                36, 660, 570);
             Controls.Add(chkAutoStart);
             Controls.Add(a1);
 
             // ---------- acciones
-            btnMount = Theme.Btn("Montar ahora", 18, 660, 158, 38, true);
+            btnMount = Theme.Btn("Montar ahora", 18, 686, 158, 38, true);
             btnMount.Click += BtnMount_Click;
-            btnUnmount = Theme.Btn("Desmontar", 184, 660, 126, 38, false);
+            btnUnmount = Theme.Btn("Desmontar", 184, 686, 126, 38, false);
             btnUnmount.Click += BtnUnmount_Click;
-            btnOpen = Theme.Btn("Abrir unidad", 318, 660, 126, 38, false);
+            btnOpen = Theme.Btn("Abrir unidad", 318, 686, 126, 38, false);
             btnOpen.Click += delegate { OpenDrive(); };
-            btnLog = Theme.Btn("Ver registro", 452, 660, 152, 38, false);
+            btnLog = Theme.Btn("Ver registro", 452, 686, 152, 38, false);
             btnLog.Click += delegate { new LogForm().ShowDialog(this); };
             Controls.Add(btnMount);
             Controls.Add(btnUnmount);
@@ -204,7 +211,7 @@ namespace ObsfsAutoMount
 
             // ---------- barra de estado
             Panel bar = new Panel();
-            bar.SetBounds(0, 712, 620, 44);
+            bar.SetBounds(0, 738, 620, 44);
             bar.BackColor = Theme.Bar;
             lblStatusDot = Theme.Lbl("●", 18, 13, 14);
             lblStatusDot.BackColor = Color.Transparent;
@@ -352,12 +359,18 @@ namespace ObsfsAutoMount
             cmbEndpoint.Text = cfg.Endpoint;
             txtAk.Text = cfg.AccessKey;
             txtSk.Text = cfg.SecretKey;
+            suppressFolderEvent = true;
             if (!string.IsNullOrEmpty(cfg.Bucket))
             {
                 cmbBucket.Items.Add(cfg.Bucket);
                 cmbBucket.Text = cfg.Bucket;
             }
-            txtPrefix.Text = cfg.Prefix;
+            if (!string.IsNullOrEmpty(cfg.Prefix))
+            {
+                cmbPrefix.Items.Add(cfg.Prefix);
+                cmbPrefix.Text = cfg.Prefix;
+            }
+            suppressFolderEvent = false;
             RefreshAdvancedButton();
 
             RefreshDriveLetters(cfg.DriveLetter);
@@ -403,7 +416,7 @@ namespace ObsfsAutoMount
             cfg.AccessKey = txtAk.Text.Trim();
             cfg.SecretKey = txtSk.Text.Trim();
             cfg.Bucket = cmbBucket.Text.Trim();
-            cfg.Prefix = txtPrefix.Text.Trim();
+            cfg.Prefix = cmbPrefix.Text.Trim();
             cfg.DriveLetter = (cmbLetter.SelectedItem as string) ?? cfg.DriveLetter;
             cfg.VolumeLabel = txtLabel.Text.Trim();
             cfg.CacheMode = (cmbCache.SelectedItem as string) ?? "writes";
@@ -530,15 +543,19 @@ namespace ObsfsAutoMount
             if (ok)
             {
                 string keep = cmbBucket.Text.Trim();
+                suppressFolderEvent = true;
                 cmbBucket.Items.Clear();
                 if (buckets != null) cmbBucket.Items.AddRange(buckets.ToArray());
                 if (!string.IsNullOrEmpty(keep) && cmbBucket.Items.Contains(keep)) cmbBucket.Text = keep;
                 else if (cmbBucket.Items.Count == 1) cmbBucket.SelectedIndex = 0;
                 else cmbBucket.Text = keep;
+                suppressFolderEvent = false;
 
                 int n = buckets == null ? 0 : buckets.Count;
                 SetTestResult("Conexión correcta. " + n + " bucket(s) accesible(s).", Theme.Ok);
                 cfg.Save();
+
+                await LoadFoldersAsync("");
             }
             else
             {
@@ -569,6 +586,97 @@ namespace ObsfsAutoMount
                    || !string.IsNullOrEmpty((cfg.CaCertPath ?? "").Trim())
                    || cfg.NoCheckCert;
             btnAdvanced.Text = on ? "Red corporativa ✓" : "Red corporativa...";
+        }
+
+        // =============================================================== carpetas del bucket
+
+        private async void CmbBucket_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (suppressFolderEvent) return;
+
+            // Otro bucket, otras carpetas: lo que estaba elegido ya no aplica.
+            suppressFolderEvent = true;
+            cmbPrefix.Items.Clear();
+            cmbPrefix.Text = "";
+            suppressFolderEvent = false;
+
+            await LoadFoldersAsync("");
+        }
+
+        private async void CmbPrefix_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (suppressFolderEvent) return;
+
+            string sel = (cmbPrefix.SelectedItem as string) ?? "";
+            if (sel.Length == 0) return;
+
+            // Elegir una carpeta abre el siguiente nivel, sin recorrer el bucket entero.
+            await LoadFoldersAsync(sel);
+        }
+
+        /// <summary>
+        /// Trae las carpetas que cuelgan de <paramref name="under"/> y las suma al combo sin pisar
+        /// lo que el usuario haya escrito. Es silencioso: si falla, no interrumpe con un cartel.
+        /// </summary>
+        private async Task LoadFoldersAsync(string under)
+        {
+            if (loadingFolders) return;
+
+            ReadUiIntoConfig();
+            if (cfg.Bucket.Length == 0 || cfg.AccessKey.Length == 0 ||
+                cfg.SecretKey.Length == 0 || !Deps.RcloneInstalled()) return;
+
+            loadingFolders = true;
+            SetFolderHint("Buscando carpetas...", Theme.InkSoft);
+
+            List<string> found = null;
+            string error = null;
+            bool ok = false;
+            AppConfig snapshot = cfg;
+            string level = AppConfig.NormalizePrefix(under);
+
+            await Task.Run(delegate { ok = Mounter.ListFolders(snapshot, level, out found, out error); });
+
+            loadingFolders = false;
+
+            if (!ok)
+            {
+                SetFolderHint("No se pudieron listar las carpetas: " + error, Theme.Warn);
+                return;
+            }
+
+            MergeFolders(found);
+
+            string donde = level.Length == 0 ? "la raíz del bucket" : "'" + level + "'";
+
+            if (found.Count == 0)
+                SetFolderHint(level.Length == 0
+                    ? "El bucket no tiene carpetas: se monta entero."
+                    : "No hay subcarpetas dentro de " + donde + ".", Theme.InkSoft);
+            else
+                SetFolderHint((found.Count == 1 ? "1 carpeta en " : found.Count + " carpetas en ") +
+                              donde + ". Elegí una para ver lo que tiene adentro.", Theme.InkSoft);
+        }
+
+        private void MergeFolders(List<string> found)
+        {
+            List<string> all = new List<string>();
+            foreach (object o in cmbPrefix.Items) all.Add((string)o);
+            foreach (string f in found) if (!all.Contains(f)) all.Add(f);
+            all.Sort(StringComparer.OrdinalIgnoreCase);
+
+            string keep = cmbPrefix.Text;
+            suppressFolderEvent = true;
+            cmbPrefix.Items.Clear();
+            cmbPrefix.Items.AddRange(all.ToArray());
+            cmbPrefix.Text = keep;
+            suppressFolderEvent = false;
+        }
+
+        private void SetFolderHint(string text, Color color)
+        {
+            lblFolders.Text = text;
+            lblFolders.ForeColor = color;
         }
 
         private void SetTestResult(string text, Color color)
