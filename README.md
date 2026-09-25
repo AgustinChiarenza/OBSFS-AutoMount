@@ -23,7 +23,8 @@ Windows muestra *"Windows protegió su PC"* porque el ejecutable no está firmad
 2. **Paso 1 — Requisitos**: clic en *Instalar faltantes*. Descarga rclone y WinFsp solo.
    WinFsp es un driver, así que Windows pide confirmación de administrador **una vez**.
 3. **Paso 2 — Credenciales**: endpoint, AK y SK. Clic en *Probar conexión*: valida las claves y
-   llena la lista de buckets disponibles. Elegir el bucket.
+   llena la lista de buckets disponibles. Elegir el bucket. Opcionalmente, escribir una
+   **Carpeta** para montar solo esa subcarpeta en vez del bucket entero.
 4. **Paso 3 — Unidad**: letra y etiqueta. Los valores de caché ya vienen con los recomendados.
 5. Tildar **Montar al iniciar el equipo** si se quiere que aparezca sola en cada sesión.
 6. **Montar ahora**. La unidad se abre en el Explorador.
@@ -38,6 +39,30 @@ pero es editable: se puede escribir cualquier otro. Se acepta con o sin `https:/
 
 > El endpoint tiene que ser el de la región real del bucket. Si no coincide, el montaje falla o
 > escribe en la región equivocada. Verificarlo en la consola de OBS.
+
+### Carpeta (prefijo)
+
+Si se deja vacía se monta el bucket completo. Si se escribe `clientes/2026`, la unidad muestra el
+contenido de esa subcarpeta como si fuera la raíz.
+
+Sirve sobre todo cuando la clave de acceso está acotada por *policy* a un prefijo: en esos casos
+listar la raíz del bucket devuelve *AccessDenied* y el montaje falla, aunque la clave sí tenga
+permiso sobre su carpeta.
+
+### Redes corporativas
+
+El botón *Red corporativa...* abre un diálogo con tres campos, todos opcionales. En una conexión
+normal no hace falta tocar nada.
+
+| Campo | Cuándo se usa |
+|---|---|
+| **Proxy HTTPS** | La empresa obliga a salir por un proxy. Ej.: `http://proxy.empresa.local:8080` |
+| **Certificado raíz** | El proxy inspecciona el tráfico TLS y reemplaza el certificado del servidor. Se apunta al `.pem` o `.crt` de la CA de la empresa. Síntoma típico en el log: `x509: certificate signed by unknown authority` |
+| **No verificar el certificado** | Último recurso, para confirmar que el problema es el certificado. Deja la conexión expuesta a intercepción: sirve para diagnosticar, no para dejar puesto |
+
+Cuando hay algo configurado, el botón pasa a decir *Red corporativa ✓*.
+
+---
 
 ---
 
@@ -151,6 +176,7 @@ src\
   IniStore.cs     Almacén clave=valor
   AppPaths.cs     Rutas y log
   Theme.cs        Paleta y fábricas de controles
+  AdvancedForm.cs Dialogo de red corporativa (proxy y certificado raiz)
   LogForm.cs      Visor de logs
   Native.cs       Interop mínimo (traer al frente la instancia abierta)
 assets\           Ícono y manifiesto
@@ -168,6 +194,7 @@ tools\            Generador de ícono, captura de pantalla
 | *NoSuchBucket* | El endpoint es de otra región que la del bucket. |
 | *AccessDenied* al listar buckets | La clave está acotada a un bucket. Escribir el nombre del bucket a mano y probar de nuevo: la app valida contra ese bucket. |
 | La unidad no aparece después de montar | *Ver registro*. Casi siempre es WinFsp faltante o el endpoint mal escrito. |
+| La unidad aparece pero Windows dice *"error del dispositivo de E/S"* | WinFsp traduce cualquier falla del backend a ese error genérico. La app ahora verifica que la unidad se pueda leer antes de darla por montada, y muestra la causa real. Sospechosos habituales: proxy TLS corporativo, *policy* del bucket acotada a un prefijo (usar **Carpeta**) o antivirus bloqueando el driver. |
 | La unidad no se montó al iniciar sesión | Revisar que el `.exe` no se haya movido, y *Administrador de tareas → Inicio*. |
 | No se puede reinstalar rclone | Hay un montaje activo usando el binario. Desmontar primero. |
 

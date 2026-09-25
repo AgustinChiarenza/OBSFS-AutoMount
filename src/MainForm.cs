@@ -45,8 +45,8 @@ namespace ObsfsAutoMount
         private ProgressBar pb;
 
         private ComboBox cmbEndpoint, cmbBucket, cmbLetter, cmbCache;
-        private TextBox txtAk, txtSk, txtLabel, txtCacheSize, txtDirCache;
-        private Button btnEye, btnTest;
+        private TextBox txtAk, txtSk, txtPrefix, txtLabel, txtCacheSize, txtDirCache;
+        private Button btnEye, btnTest, btnAdvanced;
         private Label lblTest;
 
         private CheckBox chkNetwork, chkReadOnly, chkAutoStart;
@@ -78,7 +78,7 @@ namespace ObsfsAutoMount
         private void BuildUi()
         {
             Text = "OBSFS AutoMount";
-            ClientSize = new Size(620, 694);
+            ClientSize = new Size(620, 756);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -126,7 +126,7 @@ namespace ObsfsAutoMount
             Controls.Add(g1);
 
             // ---------- 2. credenciales
-            GroupBox g2 = Theme.Group("  2 · Credenciales de Huawei Cloud OBS  ", 14, 198, 592, 188);
+            GroupBox g2 = Theme.Group("  2 · Credenciales de Huawei Cloud OBS  ", 14, 198, 592, 250);
             Label l1 = Theme.Lbl("Endpoint", 14, 28, 110);
             cmbEndpoint = Theme.Cmb(128, 25, 448, true);
             cmbEndpoint.Items.AddRange(Endpoints);
@@ -144,15 +144,22 @@ namespace ObsfsAutoMount
             };
             btnTest = Theme.Btn("Probar conexión", 128, 116, 160, 30, false);
             btnTest.Click += BtnTest_Click;
-            lblTest = Theme.Hint("", 296, 116, 280);
-            lblTest.Height = 32;
-            Label l4 = Theme.Lbl("Bucket", 14, 158, 110);
-            cmbBucket = Theme.Cmb(128, 155, 448, true);
-            AddTo(g2, l1, cmbEndpoint, l2, txtAk, l3, txtSk, btnEye, btnTest, lblTest, l4, cmbBucket);
+            btnAdvanced = Theme.Btn("Red corporativa...", 300, 116, 170, 30, false);
+            btnAdvanced.Click += BtnAdvanced_Click;
+            lblTest = Theme.Hint("Probá la conexión para validar las claves y listar los buckets.",
+                                 14, 152, 562);
+            lblTest.Height = 30;
+            Label l4 = Theme.Lbl("Bucket", 14, 188, 110);
+            cmbBucket = Theme.Cmb(128, 185, 448, true);
+            Label l5 = Theme.Lbl("Carpeta", 14, 218, 110);
+            txtPrefix = Theme.Txt(128, 215, 200);
+            Label l6 = Theme.Hint("Opcional: monta solo esa subcarpeta.", 336, 218, 240);
+            AddTo(g2, l1, cmbEndpoint, l2, txtAk, l3, txtSk, btnEye, btnTest, btnAdvanced,
+                      lblTest, l4, cmbBucket, l5, txtPrefix, l6);
             Controls.Add(g2);
 
             // ---------- 3. unidad
-            GroupBox g3 = Theme.Group("  3 · Unidad en el Explorador  ", 14, 394, 592, 148);
+            GroupBox g3 = Theme.Group("  3 · Unidad en el Explorador  ", 14, 456, 592, 148);
             Label m1 = Theme.Lbl("Letra", 14, 28, 60);
             cmbLetter = Theme.Cmb(128, 25, 64, false);
             Label m2 = Theme.Lbl("Etiqueta", 212, 28, 60);
@@ -172,23 +179,23 @@ namespace ObsfsAutoMount
             Controls.Add(g3);
 
             // ---------- inicio automatico
-            chkAutoStart = Theme.Chk("Montar al iniciar el equipo", 18, 552, 300);
+            chkAutoStart = Theme.Chk("Montar al iniciar el equipo", 18, 614, 300);
             chkAutoStart.Font = Theme.Bold;
             chkAutoStart.CheckedChanged += ChkAutoStart_Changed;
             Label a1 = Theme.Hint(
                 "Se monta sola al iniciar sesión en Windows, sin ventanas ni permisos de administrador.",
-                36, 572, 570);
+                36, 634, 570);
             Controls.Add(chkAutoStart);
             Controls.Add(a1);
 
             // ---------- acciones
-            btnMount = Theme.Btn("Montar ahora", 18, 598, 158, 38, true);
+            btnMount = Theme.Btn("Montar ahora", 18, 660, 158, 38, true);
             btnMount.Click += BtnMount_Click;
-            btnUnmount = Theme.Btn("Desmontar", 184, 598, 126, 38, false);
+            btnUnmount = Theme.Btn("Desmontar", 184, 660, 126, 38, false);
             btnUnmount.Click += BtnUnmount_Click;
-            btnOpen = Theme.Btn("Abrir unidad", 318, 598, 126, 38, false);
+            btnOpen = Theme.Btn("Abrir unidad", 318, 660, 126, 38, false);
             btnOpen.Click += delegate { OpenDrive(); };
-            btnLog = Theme.Btn("Ver registro", 452, 598, 152, 38, false);
+            btnLog = Theme.Btn("Ver registro", 452, 660, 152, 38, false);
             btnLog.Click += delegate { new LogForm().ShowDialog(this); };
             Controls.Add(btnMount);
             Controls.Add(btnUnmount);
@@ -197,7 +204,7 @@ namespace ObsfsAutoMount
 
             // ---------- barra de estado
             Panel bar = new Panel();
-            bar.SetBounds(0, 650, 620, 44);
+            bar.SetBounds(0, 712, 620, 44);
             bar.BackColor = Theme.Bar;
             lblStatusDot = Theme.Lbl("●", 18, 13, 14);
             lblStatusDot.BackColor = Color.Transparent;
@@ -350,6 +357,8 @@ namespace ObsfsAutoMount
                 cmbBucket.Items.Add(cfg.Bucket);
                 cmbBucket.Text = cfg.Bucket;
             }
+            txtPrefix.Text = cfg.Prefix;
+            RefreshAdvancedButton();
 
             RefreshDriveLetters(cfg.DriveLetter);
             txtLabel.Text = cfg.VolumeLabel;
@@ -394,6 +403,7 @@ namespace ObsfsAutoMount
             cfg.AccessKey = txtAk.Text.Trim();
             cfg.SecretKey = txtSk.Text.Trim();
             cfg.Bucket = cmbBucket.Text.Trim();
+            cfg.Prefix = txtPrefix.Text.Trim();
             cfg.DriveLetter = (cmbLetter.SelectedItem as string) ?? cfg.DriveLetter;
             cfg.VolumeLabel = txtLabel.Text.Trim();
             cfg.CacheMode = (cmbCache.SelectedItem as string) ?? "writes";
@@ -533,8 +543,32 @@ namespace ObsfsAutoMount
             else
             {
                 SetTestResult("Falló la conexión.", Theme.Bad);
-                Alert("No se pudo conectar a OBS.\r\n\r\n" + error, MessageBoxIcon.Error);
+                Alert("No se pudo conectar a OBS.\r\n\r\n" + error +
+                      "\r\n\r\n" + Mounter.Diagnose(error), MessageBoxIcon.Error);
             }
+        }
+
+        private void BtnAdvanced_Click(object sender, EventArgs e)
+        {
+            if (busy) return;
+            ReadUiIntoConfig();
+            using (AdvancedForm f = new AdvancedForm(cfg))
+            {
+                if (f.ShowDialog(this) == DialogResult.OK)
+                {
+                    cfg.Save();
+                    RefreshAdvancedButton();
+                }
+            }
+        }
+
+        /// <summary>Marca el boton cuando hay proxy o certificado propio configurado.</summary>
+        private void RefreshAdvancedButton()
+        {
+            bool on = !string.IsNullOrEmpty((cfg.HttpsProxy ?? "").Trim())
+                   || !string.IsNullOrEmpty((cfg.CaCertPath ?? "").Trim())
+                   || cfg.NoCheckCert;
+            btnAdvanced.Text = on ? "Red corporativa ✓" : "Red corporativa...";
         }
 
         private void SetTestResult(string text, Color color)

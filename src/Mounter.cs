@@ -116,6 +116,18 @@ namespace ObsfsAutoMount
             psi.EnvironmentVariables[EnvPrefix + "ACL"] = "private";
             // Sin color ANSI en la salida capturada.
             psi.EnvironmentVariables["RCLONE_COLOR"] = "NEVER";
+
+            // Red corporativa. rclone lee cualquier flag global como RCLONE_<FLAG>, y la pila HTTP
+            // de Go toma HTTPS_PROXY/HTTP_PROXY. Se aplica a todas las llamadas, no solo al montaje.
+            string proxy = (cfg.HttpsProxy ?? "").Trim();
+            if (proxy.Length > 0)
+            {
+                psi.EnvironmentVariables["HTTPS_PROXY"] = proxy;
+                psi.EnvironmentVariables["HTTP_PROXY"] = proxy;
+            }
+            string ca = (cfg.CaCertPath ?? "").Trim();
+            if (ca.Length > 0) psi.EnvironmentVariables["RCLONE_CA_CERT"] = ca;
+            if (cfg.NoCheckCert) psi.EnvironmentVariables["RCLONE_NO_CHECK_CERTIFICATE"] = "true";
         }
 
         public static string Q(string s)
@@ -228,7 +240,7 @@ namespace ObsfsAutoMount
             if (bucket.Length > 0)
             {
                 ProcResult r2 = RunRclone(
-                    "lsd " + AppConfig.RemoteName + ":" + bucket + " --max-depth 1" + netArgs, cfg, 60000);
+                    "lsd " + cfg.RemotePath() + " --max-depth 1" + netArgs, cfg, 60000);
                 if (r2.Ok)
                 {
                     buckets.Add(bucket);
@@ -257,7 +269,7 @@ namespace ObsfsAutoMount
         {
             StringBuilder a = new StringBuilder();
             a.Append("mount ");
-            a.Append(AppConfig.RemoteName).Append(":").Append(cfg.Bucket.Trim());
+            a.Append(cfg.RemotePath());
             a.Append(" ").Append(cfg.MountPoint());
 
             string mode = string.IsNullOrEmpty(cfg.CacheMode) ? "writes" : cfg.CacheMode;
@@ -366,8 +378,22 @@ namespace ObsfsAutoMount
                     st.Bucket = cfg.Bucket;
                     st.StartedUtc = DateTime.UtcNow.ToString("o");
                     st.Save();
-                    if (progress != null) progress("Unidad " + cfg.MountPoint() + " montada.");
-                    return true;
+
+                    // Que la letra exista no significa que se pueda leer: si el backend rechaza el
+                    // listado, WinFsp lo traduce a un generico "error de dispositivo de E/S" y la
+                    // unidad queda visible pero inutil. Se comprueba antes de cantar victoria.
+                    if (progress != null) progress("Verificando acceso a " + cfg.MountPoint() + " ...");
+                    string readErr;
+                    if (VerifyReadable(cfg.DriveRoot(), ReadCheckMs, out readErr))
+                    {
+                        if (progress != null) progress("Unidad " + cfg.MountPoint() + " montada.");
+                        return true;
+                    }
+
+                    error = UnreadableMessage(cfg, readErr);
+                    if (progress != null) progress("La unidad no responde: desmontando.");
+                    Unmount(st, null);
+                    return false;
                 }
                 Thread.Sleep(400);
             }
@@ -482,6 +508,99 @@ namespace ObsfsAutoMount
         }
 
         /// <summary>Ultimas lineas relevantes del log de montaje, para explicar una falla.</summary>
+        /// <summary>Margen para que la unidad conteste el primer listado.</summary>
+        private const int ReadCheckMs = 20000;
+
+        /// <summary>
+        /// Intenta leer la raiz de la unidad. Un bucket vacio cuenta como exito: lo que se busca es
+        /// que el backend conteste, no que haya archivos.
+        /// </summary>
+        private static bool VerifyReadable(string driveRoot, int timeoutMs, out string error)
+        {
+            error = null;
+            string last = null;
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (true)
+            {
+                try
+                {
+                    // Alcanza con pedir la primera entrada: si el listado falla, revienta aca.
+                    using (IEnumerator<string> it =
+                               Directory.EnumerateFileSystemEntries(driveRoot).GetEnumerator())
+                    {
+                        it.MoveNext();
+                    }
+                    return true;
+                }
+                catch (Exception ex) { last = ex.Message; }
+
+                if (DateTime.UtcNow >= deadline) break;
+                Thread.Sleep(700);
+            }
+            error = last;
+            return false;
+        }
+
+        private static string UnreadableMessage(AppConfig cfg, string windowsError)
+        {
+            StringBuilder m = new StringBuilder();
+            m.Append("La unidad ").Append(cfg.MountPoint())
+             .AppendLine(" se creo, pero Windows no puede leerla.");
+            m.AppendLine();
+            m.Append("Windows informa: ")
+             .AppendLine(string.IsNullOrEmpty(windowsError) ? "error de dispositivo de E/S" : windowsError);
+            m.AppendLine();
+            string log = LastLogError();
+            m.AppendLine("Ultimas lineas del registro de rclone:");
+            m.AppendLine(log);
+            m.AppendLine();
+            m.Append(Diagnose(log));
+            return m.ToString();
+        }
+
+        private static bool Has(string s, string needle)
+        {
+            return s != null && s.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Traduce el contenido del log a la causa mas probable. Pensado para maquinas corporativas,
+        /// donde el error de E/S suele tapar un proxy con inspeccion TLS o una policy del bucket.
+        /// </summary>
+        public static string Diagnose(string blob)
+        {
+            if (Has(blob, "x509") || Has(blob, "certificate signed by unknown") ||
+                Has(blob, "certificate is not trusted") || Has(blob, "tls: "))
+                return "Causa probable: un proxy corporativo esta inspeccionando el trafico TLS y " +
+                       "reemplaza el certificado del servidor. Cargar el certificado raiz de la " +
+                       "empresa en Red corporativa.";
+
+            if (Has(blob, "proxyconnect") || Has(blob, "i/o timeout") ||
+                Has(blob, "connection refused") || Has(blob, "context deadline exceeded") ||
+                Has(blob, "network is unreachable"))
+                return "Causa probable: no hay salida a Internet hacia el endpoint. Si la red usa " +
+                       "proxy, configurarlo en Red corporativa; si no, es el firewall.";
+
+            if (Has(blob, "AccessDenied") || Has(blob, "403"))
+                return "Causa probable: la clave no tiene permiso de listado sobre esa ruta. Si la " +
+                       "policy del bucket la limita a una subcarpeta, escribirla en el campo Carpeta.";
+
+            if (Has(blob, "no such host"))
+                return "Causa probable: el endpoint no resuelve por DNS. Revisar como esta escrito " +
+                       "y si la red corporativa lo bloquea.";
+
+            if (Has(blob, "NoSuchBucket"))
+                return "Causa probable: el bucket no existe en esa region, o sea que el endpoint es " +
+                       "de otra region.";
+
+            if (Has(blob, "InvalidAccessKeyId") || Has(blob, "SignatureDoesNotMatch"))
+                return "Causa probable: las credenciales no son validas para este endpoint.";
+
+            return "Si la maquina es corporativa, los sospechosos son el proxy con inspeccion TLS, " +
+                   "el antivirus o EDR bloqueando rclone, y las policies del bucket. Ver registro " +
+                   "tiene el detalle completo.";
+        }
+
         public static string LastLogError()
         {
             try
